@@ -171,6 +171,7 @@
 		font-size: 1.7rem;
 		font-weight: 400;
 		letter-spacing: -0.03em;
+		overflow-wrap: anywhere;
 	}
 	.hero-card > p {
 		font-size: 0.72rem;

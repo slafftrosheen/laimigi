@@ -91,12 +91,12 @@ test('teacher creates a draft, edits it and publishes the reviewed material', as
 	).toBe('draft');
 	await page.getByRole('link', { name: 'Shapes around us', exact: true }).click();
 	await page.getByLabel('Title', { exact: true }).fill('Shapes: look and compare');
-	await page.getByLabel('Status', { exact: true }).selectOption('published');
+	await page.getByLabel('Status').selectOption('published');
 	await page.getByRole('button', { name: 'Save changes', exact: true }).click();
 	await expect(page.getByText('Material updated.', { exact: true })).toBeVisible();
 	await page.reload();
 	await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Shapes: look and compare');
-	await expect(page.getByLabel('Status', { exact: true })).toHaveValue('published');
+	await expect(page.getByLabel('Status')).toHaveValue('published');
 	await capture(page, 'teacher-published-material');
 	state = await (await request.get(`${fixture}/__test/state`)).json();
 	expect(
