@@ -1,0 +1,21 @@
+{
+	"extends": "$app/tsconfig",
+	"compilerOptions": {
+		"strict": true,
+		"types": ["$app/types", "node"],
+		"paths": {
+			"#lib": ["./src/lib/index.ts"],
+			"#lib/*": ["./src/lib/*"]
+		}
+	},
+	"include": [
+		"src",
+		"tests/unit",
+		"tests/ai",
+		"tests/e2e",
+		"playwright.config.ts",
+		"vite.config.ts",
+		"prettier.config.js",
+		"eslint.config.js"
+	]
+}

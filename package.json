@@ -1,0 +1,56 @@
+{
+	"name": "laimigi",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"imports": {
+		"#lib": "./src/lib/index.js",
+		"#lib/*": "./src/lib/*"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"lint": "prettier --check . && eslint .",
+		"format": "prettier --write .",
+		"test:unit": "vitest",
+		"test": "vitest run",
+		"test:db": "node scripts/db-test.mjs",
+		"test:e2e": "playwright test",
+		"verify": "npm run check && npm run lint && npm test && npm run test:db && npm run build",
+		"admin:bootstrap": "node --env-file=.env.local scripts/bootstrap-root-admin.mjs"
+	},
+	"devDependencies": {
+		"@electric-sql/pglite": "^0.6.0",
+		"@eslint/js": "^10.0.1",
+		"@playwright/test": "^1.65.1",
+		"@sveltejs/adapter-vercel": "^7.0.3",
+		"@sveltejs/kit": "^3.2.0",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@types/node": "^24",
+		"eslint": "^10.15.0",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-svelte": "^3.24.1",
+		"globals": "^17.14.0",
+		"prettier": "^3.10.1",
+		"prettier-plugin-svelte": "^4.1.1",
+		"svelte": "^5.57.3",
+		"svelte-check": "^4.7.8",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.72.2",
+		"vite": "^8.3.8",
+		"vitest": "^5.1.0"
+	},
+	"dependencies": {
+		"@supabase/ssr": "^0.12.7",
+		"@supabase/supabase-js": "^2.119.2",
+		"zod": "^4.6.7"
+	},
+	"description": "Laim\u012bgie b\u0113rni \u2014 multilingual family learning portal",
+	"engines": {
+		"node": ">=24.0.0 <25"
+	}
+}
