@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AGE_BANDS, AVATARS, LOCALES, LOCATIONS } from '#lib/types';
+import { authorBlocksSchema } from '#lib/learning/content';
 
 export const uuid = z.uuid();
 export const loginSchema = z.object({
@@ -19,11 +20,18 @@ export const heroSchema = z.object({
 	avatar: z.enum(AVATARS),
 	locale: z.enum(LOCALES)
 });
-export const lessonSchema = z.object({
-	title: z.string().trim().min(3).max(120),
-	description: z.string().trim().max(400),
-	body: z.string().trim().min(10).max(20_000),
-	locale: z.enum(LOCALES),
-	age_band: z.enum(AGE_BANDS),
-	location: z.enum(LOCATIONS)
-});
+export const lessonSchema = z
+	.object({
+		title: z.string().trim().min(3).max(120),
+		description: z.string().trim().max(400),
+		body: z.string().trim().max(20_000),
+		blocks: authorBlocksSchema.default([]),
+		locale: z.enum(LOCALES),
+		age_band: z.enum(AGE_BANDS),
+		location: z.enum(LOCATIONS),
+		status: z.enum(['draft', 'published']).default('draft')
+	})
+	.superRefine((lesson, context) => {
+		if (!lesson.blocks.length && lesson.body.length < 10)
+			context.addIssue({ code: 'custom', path: ['body'], message: 'Add an overview or activity' });
+	});

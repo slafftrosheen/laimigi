@@ -8,7 +8,7 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
 	const { supabase } = requireRoot(event);
-	if (!isServiceConfigured()) error(503, { message: 'not_configured' });
+	if (!isServiceConfigured()) error(503, 'not_configured');
 	const requestedPage = Number(event.url.searchParams.get('page') ?? '1');
 	const page =
 		Number.isInteger(requestedPage) && requestedPage > 0 && requestedPage < 100_000
@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 		page,
 		perPage: 50
 	});
-	if (listError) error(503, { message: 'database_unavailable' });
+	if (listError) error(503, 'database_unavailable');
 	const { data: roles, error: rolesError } = await supabase
 		.from('user_roles')
 		.select('user_id,role')
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
 			'user_id',
 			data.users.map((user) => user.id)
 		);
-	if (rolesError) error(503, { message: 'database_unavailable' });
+	if (rolesError) error(503, 'database_unavailable');
 	const byId = new Map(
 		((roles as { user_id: string; role: AppRole }[]) ?? []).map((row) => [row.user_id, row.role])
 	);

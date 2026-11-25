@@ -29,6 +29,6 @@ export const load: PageServerLoad = async (event) => {
 	if (age_band !== 'all') query = query.eq('age_band', age_band);
 	if (location !== 'all') query = query.eq('location', location);
 	const { data, error: queryError } = await query;
-	if (queryError) error(503, { message: 'database_unavailable' });
+	if (queryError) error(503, 'database_unavailable');
 	return { lessons: (data ?? []) as Lesson[], filters: { language, age_band, location } };
 };

@@ -67,6 +67,13 @@
 								</a>
 							</div>
 							<div class="card-actions">
+								<form method="POST" action="?/duplicate" use:enhance>
+									<input type="hidden" name="lesson_id" value={lesson.id} /><button
+										class="btn secondary small"
+									>
+										<Icon name="copy" size={15} />{m.duplicateMaterial}
+									</button>
+								</form>
 								{#if lesson.status === 'draft'}<form method="POST" action="?/publish" use:enhance>
 										<input type="hidden" name="lesson_id" value={lesson.id} /><button
 											class="btn small"
@@ -105,7 +112,11 @@
 		<aside class="panel" id="new-material">
 			<div class="eyebrow"><Icon name="plus" size={16} />{m.draft}</div>
 			<h2 style="margin:13px 0 24px">{m.newMaterial}</h2>
-			<LessonForm locale={data.locale} action="?/create" />
+			<LessonForm
+				locale={data.locale}
+				action="?/create"
+				values={form && 'values' in form ? form.values : undefined}
+			/>
 		</aside>
 	</div>
 </div>
@@ -171,6 +182,7 @@
 	}
 	.card-actions {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: flex-start;
 		gap: 18px;
 		margin-top: 18px;

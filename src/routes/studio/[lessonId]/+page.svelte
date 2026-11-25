@@ -18,6 +18,13 @@
 	</div>
 	<section class="content-section">
 		<Notice {form} locale={data.locale} />
-		<div class="panel"><LessonForm locale={data.locale} lesson={data.lesson} /></div>
+		<div class="panel">
+			<LessonForm
+				locale={data.locale}
+				lesson={data.lesson}
+				authorBlocks={data.authorBlocks}
+				values={form && 'values' in form ? form.values : undefined}
+			/>
+		</div>
 	</section>
 </div>

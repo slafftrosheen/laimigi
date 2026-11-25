@@ -9,12 +9,14 @@ declare global {
 			role: AppRole | null;
 			locale: Locale;
 			configured: boolean;
+			childMode: { heroId: string } | null;
 		}
 		interface PageData {
 			locale: Locale;
 			user: { id: string; email: string | undefined } | null;
 			role: AppRole | null;
 			configured: boolean;
+			childMode: { heroId: string } | null;
 		}
 	}
 }

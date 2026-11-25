@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
-	import { getMessages, leagueLabel, locales, localeNames } from '#lib/i18n/index';
+	import { getMessages, leagueLabel } from '#lib/i18n/index';
 	import Emblem from '#lib/components/Emblem.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Notice from '#lib/components/Notice.svelte';
+	import HeroForm from '#lib/components/HeroForm.svelte';
+	import RewardTrail from '#lib/components/RewardTrail.svelte';
 	import type { PageProps } from './$types';
 	let { data, form }: PageProps = $props();
 	let m = $derived(getMessages(data.locale));
-	let selectedAvatar = $state('leaf');
-	let busy = $state(false);
 	let confirmId = $state('');
+	let values = $derived(form && 'values' in form ? form.values : undefined);
 </script>
 
 <svelte:head><title>{m.family} · Laimīgie bērni</title></svelte:head>
@@ -21,7 +22,7 @@
 		<p>{m.familyIntro}</p>
 	</div>
 	<Notice {form} locale={data.locale} />
-	<div class="split-grid content-section">
+	<div class="family-layout content-section">
 		<section>
 			<div class="section-heading">
 				<h2>{m.yourHeroes}</h2>
@@ -32,19 +33,43 @@
 					<h3>{m.noHeroes}</h3>
 					<p>{m.noHeroesBody}</p>
 					<a class="text-link" href="#create-hero">{m.newHero}<Icon name="arrow" size={16} /></a>
-				</div>{:else}<div class="hero-grid">
-					{#each data.heroes as hero (hero.id)}<article class="hero-card">
+				</div>
+			{:else}<div class="hero-grid">
+					{#each data.heroes as hero (hero.id)}
+						{@const started = data.progress.filter(
+							(item) => item.child_profile_id === hero.id && item.status === 'in_progress'
+						).length}
+						<article class="hero-card">
 							<div class="hero-card-top">
-								<span class="badge">{hero.age_band}</span><span class="hero-locale">
-									{hero.locale.toUpperCase()}
-								</span>
+								<span class="badge">{hero.age_band}</span><span>{hero.locale.toUpperCase()}</span>
 							</div>
-							<div class="hero-emblem"><Emblem avatar={hero.avatar} size={100} /></div>
-							<h3>{hero.nickname}</h3>
-							<p>{leagueLabel(hero.age_band, data.locale)}</p>
-							<a class="btn block" href={resolve('/play/[heroId]', { heroId: hero.id })}>
-								{m.enterWorld}<Icon name="arrow" size={17} />
-							</a>
+							<div class="hero-card-identity">
+								<Emblem avatar={hero.avatar} size={76} />
+								<div>
+									<h3>{hero.nickname}</h3>
+									<p>{leagueLabel(hero.age_band, data.locale)}</p>
+								</div>
+							</div>
+							<div class="hero-card-progress">
+								<RewardTrail
+									{hero}
+									rewards={data.rewards}
+									locale={data.locale}
+									compact
+								/>{#if started}<p class="started-count">
+										<Icon name="clock" size={14} />{m.startedLessons}: {started}
+									</p>{/if}
+							</div>
+							<form method="POST" action={resolve('/play/[heroId]/enter', { heroId: hero.id })}>
+								<button class="btn block">{m.enterWorld}<Icon name="arrow" size={17} /></button>
+							</form>
+							<details class="hero-edit" open={values?.hero_id === hero.id}>
+								<summary><Icon name="settings" size={16} />{m.editHero}</summary><HeroForm
+									{hero}
+									locale={data.locale}
+									values={values?.hero_id === hero.id ? values : undefined}
+								/>
+							</details>
 							<details class="detail-actions">
 								<summary>{m.removeHero}</summary>
 								<p class="small muted">{m.removeHeroWarning}</p>
@@ -61,7 +86,8 @@
 									</button>
 								</form>
 							</details>
-						</article>{/each}
+						</article>
+					{/each}
 				</div>{/if}
 			<div class="source-note spacer-top">{m.familyHint}</div>
 			<div class="coming-note">
@@ -74,208 +100,156 @@
 		</section>
 		<aside class="panel" id="create-hero">
 			<div class="eyebrow"><Icon name="plus" size={15} />{m.newHero}</div>
-			<h2 style="margin-top:14px">{m.newHero}</h2>
-			<form
-				method="POST"
-				action="?/createHero"
-				use:enhance={() => {
-					busy = true;
-					return async ({ update }) => {
-						await update();
-						busy = false;
-					};
-				}}
-			>
-				<label class="field">
-					<span>{m.nickname}</span><input
-						name="nickname"
-						required
-						minlength="2"
-						maxlength="32"
-						autocomplete="off"
-					/><small>{m.nicknameHint}</small>
-				</label><label class="field">
-					<span>{m.ageBand}</span><select name="age_band" required>
-						<option value="4-6">{m.age46}</option><option value="7-9">{m.age79}</option><option
-							value="10-12"
-						>
-							{m.age1012}
-						</option>
-					</select>
-				</label>
-				<fieldset class="fieldset">
-					<legend>{m.avatar}</legend>
-					<div class="avatar-options">
-						{#each ['leaf', 'compass', 'crystal'] as avatar (avatar)}<label
-								class:chosen={selectedAvatar === avatar}
-							>
-								<input
-									type="radio"
-									name="avatar"
-									value={avatar}
-									bind:group={selectedAvatar}
-								/><Emblem {avatar} size={49} /><span>
-									{avatar === 'leaf'
-										? m.avatarLeaf
-										: avatar === 'compass'
-											? m.avatarCompass
-											: m.avatarCrystal}
-								</span>
-							</label>{/each}
-					</div>
-				</fieldset>
-				<label class="field">
-					<span>{m.heroLanguage}</span><select name="locale" value={data.locale}>
-						{#each locales as locale (locale)}<option value={locale}>
-								{localeNames[locale]}
-							</option>{/each}
-					</select>
-				</label><button class="btn block" disabled={busy}>
-					{busy ? m.saving : m.newHero}<Icon name="plus" size={17} />
-				</button>
-			</form>
+			<h2>{m.newHero}</h2>
+			<HeroForm locale={data.locale} values={!values?.hero_id ? values : undefined} />
 		</aside>
 	</div>
 </div>
 
 <style>
+	.family-layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 340px;
+		align-items: start;
+		gap: 32px;
+	}
 	.hero-grid {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 20px;
+		align-items: start;
 	}
 	.hero-card {
+		min-width: 0;
 		background: var(--paper);
 		border: 1px solid var(--line);
 		border-radius: 16px;
-		padding: 22px;
-		text-align: center;
+		padding: 23px;
 	}
 	.hero-card-top {
 		display: flex;
-		align-items: center;
 		justify-content: space-between;
+		align-items: center;
 	}
-	.hero-locale {
-		font-size: 0.63rem;
-		font-weight: 650;
+	.hero-card-top > span:last-child {
+		font-size: 0.61rem;
 		color: var(--muted);
+		font-weight: 650;
 	}
-	.hero-emblem {
+	.hero-card-identity {
 		display: flex;
-		justify-content: center;
-		margin: 24px 0 24px;
+		gap: 20px;
+		align-items: center;
+		margin: 28px 0;
+	}
+	.hero-card-identity > div {
+		min-width: 0;
 	}
 	.hero-card h3 {
 		font-family: var(--font-display);
-		font-size: 1.7rem;
+		font-size: 1.8rem;
 		font-weight: 400;
 		letter-spacing: -0.03em;
 		overflow-wrap: anywhere;
 	}
-	.hero-card > p {
-		font-size: 0.72rem;
+	.hero-card-identity p {
+		font-size: 0.68rem;
 		color: var(--muted);
-		margin: 8px 0 21px;
+		margin-top: 7px;
+	}
+	.hero-card-progress {
+		padding: 19px 0;
+		margin-bottom: 20px;
+		border-block: 1px solid var(--line);
+	}
+	.started-count {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 13px;
+		font-size: 0.64rem;
+		color: var(--muted);
+	}
+	.hero-edit {
+		margin-top: 18px;
+		padding-bottom: 15px;
+		border-bottom: 1px solid var(--line);
+	}
+	.hero-edit > summary {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		cursor: pointer;
+		font-size: 0.75rem;
+		font-weight: 650;
+		padding: 3px 0;
+	}
+	.hero-edit[open] > summary {
+		margin-bottom: 22px;
+	}
+	.detail-actions p {
+		margin: 13px 0;
+		font-size: 0.72rem;
+	}
+	.detail-actions .check-field {
+		font-size: 0.71rem;
 	}
 	.hero-card .detail-actions {
-		text-align: left;
-	}
-	.hero-card .detail-actions p {
-		font-size: 0.74rem;
-		margin-bottom: 12px;
-	}
-	.hero-card .detail-actions .check-field {
-		font-size: 0.72rem;
+		margin-top: 16px;
 	}
 	.hero-card .detail-actions summary {
-		text-align: center;
-		font-size: 0.69rem;
+		font-size: 0.67rem;
 	}
-	.avatar-options {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 10px;
+	#create-hero {
+		scroll-margin-top: 25px;
 	}
-	.avatar-options label {
-		position: relative;
-		border: 1px solid var(--line);
-		border-radius: 9px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 12px;
-		padding: 15px 3px 10px;
-		background: #f7f7ed;
-		cursor: pointer;
-	}
-	.avatar-options label.chosen {
-		background: #e6ecd9;
-		border-color: #668765;
-		box-shadow: 0 0 0 1px #668765;
-	}
-	.avatar-options input {
-		position: absolute;
-		width: 16px;
-		height: 16px;
-		right: 4px;
-		top: 4px;
-		accent-color: var(--forest);
-	}
-	.avatar-options span {
-		font-size: 0.63rem;
+	#create-hero h2 {
+		font-size: 1.9rem;
+		margin: 14px 0 23px;
 	}
 	.coming-note {
-		margin-top: 30px;
-		padding: 22px;
 		display: flex;
-		align-items: flex-start;
-		gap: 15px;
-		background: #edeee3;
-		border-radius: 12px;
-		color: #819075;
+		gap: 17px;
+		padding: 24px;
+		background: #edf0e4;
+		border: 1px solid #d8dfca;
+		border-radius: 13px;
+		margin-top: 29px;
+		color: #6d8063;
 	}
 	.coming-note :global(svg) {
 		flex: none;
 		margin-top: 2px;
 	}
 	.coming-note h3 {
-		font-size: 0.86rem;
-		color: var(--ink);
+		font-size: 0.82rem;
 		margin-bottom: 7px;
 	}
 	.coming-note p {
-		font-size: 0.77rem;
-		color: var(--muted);
+		font-size: 0.74rem;
 	}
-	aside.panel {
-		height: fit-content;
-		scroll-margin-top: 25px;
-	}
-	aside.panel h2 {
-		font-size: 1.8rem;
-		margin-bottom: 25px;
-	}
-	@media (max-width: 920px) {
-		aside.panel {
-			max-width: 550px;
-			width: 100%;
-		}
+	@media (max-width: 1120px) {
 		.hero-grid {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
+			grid-template-columns: 1fr;
 		}
 	}
-	@media (max-width: 700px) {
+	@media (max-width: 800px) {
+		.family-layout {
+			grid-template-columns: 1fr;
+		}
 		.hero-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
-		.hero-card {
-			padding: 17px;
-		}
 	}
-	@media (max-width: 450px) {
+	@media (max-width: 600px) {
 		.hero-grid {
 			grid-template-columns: 1fr;
+		}
+		.hero-card {
+			padding: 23px;
+		}
+		.hero-card-identity {
+			gap: 18px;
 		}
 	}
 </style>

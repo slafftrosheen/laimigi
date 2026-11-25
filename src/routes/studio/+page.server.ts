@@ -1,7 +1,8 @@
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { requireRole } from '#lib/server/auth';
 import { readBoundedForm } from '#lib/server/http';
-import { lessonSchema, uuid } from '#lib/validation';
+import { uuid } from '#lib/validation';
+import { parseLessonForm, getEditorSnapshot } from '#lib/server/lesson-editor';
 import type { Lesson } from '#lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -15,19 +16,46 @@ export const load: PageServerLoad = async (event) => {
 		.limit(100);
 	if (role === 'teacher') query = query.eq('author_id', user.id);
 	const { data, error: queryError } = await query;
-	if (queryError) error(503, { message: 'database_unavailable' });
+	if (queryError) error(503, 'database_unavailable');
 	return { lessons: (data ?? []) as Lesson[] };
 };
 export const actions: Actions = {
 	create: async (event) => {
-		const { supabase, user } = requireRole(event, staff);
-		const parsed = lessonSchema.safeParse(Object.fromEntries(await readBoundedForm(event.request)));
-		if (!parsed.success) return fail(400, { error: 'invalid_input' });
-		const { error: mutationError } = await supabase
-			.from('lessons')
-			.insert({ ...parsed.data, author_id: user.id, status: 'draft' });
-		if (mutationError) return fail(400, { error: 'save_failed' });
-		return { success: true, message: 'lesson_created' };
+		const { supabase } = requireRole(event, staff);
+		const { parsed, values } = parseLessonForm(await readBoundedForm(event.request, 1_500_000));
+		if (!parsed.success) return fail(400, { error: 'invalid_input', values });
+		const { data, error: mutationError } = await supabase.rpc('save_lesson', {
+			p_lesson_id: null,
+			p_content: { ...parsed.data, status: 'draft' }
+		});
+		if (mutationError || !uuid.safeParse(data).success)
+			return fail(400, { error: 'save_failed', values });
+		redirect(303, `/studio/${data}`);
+	},
+	duplicate: async (event) => {
+		const { supabase, user, role } = requireRole(event, staff);
+		const form = await readBoundedForm(event.request, 4_000);
+		const id = uuid.safeParse(form.get('lesson_id'));
+		if (!id.success) return fail(400, { error: 'invalid_input' });
+		const { lesson, authorBlocks } = await getEditorSnapshot(supabase, id.data);
+		if (role === 'teacher' && lesson.author_id !== user.id)
+			return fail(403, { error: 'forbidden' });
+		const prefix = { lv: 'Kopija: ', ru: 'Копия: ', en: 'Copy: ' }[lesson.locale];
+		const { data, error: mutationError } = await supabase.rpc('save_lesson', {
+			p_lesson_id: null,
+			p_content: {
+				title: `${prefix}${lesson.title}`.slice(0, 120),
+				description: lesson.description,
+				body: lesson.body,
+				locale: lesson.locale,
+				age_band: lesson.age_band,
+				location: lesson.location,
+				status: 'draft',
+				blocks: authorBlocks
+			}
+		});
+		if (mutationError || !uuid.safeParse(data).success) return fail(400, { error: 'save_failed' });
+		redirect(303, `/studio/${data}`);
 	},
 	publish: async (event) => {
 		const { supabase } = requireRole(event, staff);

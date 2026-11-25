@@ -3,6 +3,7 @@ import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
 import { APP_ROLES, LOCALES, type AppRole, type Locale } from '#lib/types';
 import { getPublicConfig, isConfigured } from '#lib/server/supabase';
 import { assertSameOrigin } from '#lib/server/http';
+import { readChildMode, enforceChildModeRoute } from '#lib/server/child-mode';
 
 export const handle: Handle = async ({ event, resolve }) => {
 	// Kit relaxes built-in form CSRF checks in development; the shared online
@@ -16,6 +17,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.role = null;
 	event.locals.supabase = null;
+	event.locals.childMode = null;
 	if (event.locals.configured) {
 		const { url, key } = getPublicConfig();
 		event.locals.supabase = createServerClient(url, key, {
@@ -40,13 +42,17 @@ export const handle: Handle = async ({ event, resolve }) => {
 		} = await event.locals.supabase.auth.getUser();
 		if (!authError && user) {
 			event.locals.user = user;
-			const { data } = await event.locals.supabase
-				.from('user_roles')
-				.select('role')
-				.eq('user_id', user.id)
-				.maybeSingle<{ role: string }>();
-			if (data && APP_ROLES.includes(data.role as AppRole))
-				event.locals.role = data.role as AppRole;
+			event.locals.childMode = await readChildMode(event.locals.supabase);
+			enforceChildModeRoute(event);
+			if (!event.locals.childMode) {
+				const { data } = await event.locals.supabase
+					.from('user_roles')
+					.select('role')
+					.eq('user_id', user.id)
+					.maybeSingle<{ role: string }>();
+				if (data && APP_ROLES.includes(data.role as AppRole))
+					event.locals.role = data.role as AppRole;
+			}
 		}
 	}
 	const response = await resolve(event, {

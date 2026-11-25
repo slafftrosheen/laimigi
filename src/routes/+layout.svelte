@@ -10,7 +10,9 @@
 	let m = $derived(getMessages(data.locale));
 	let menuOpen = $state(false);
 	let isGame = $derived(
-		page.url.pathname.startsWith('/play/') || page.url.pathname.startsWith('/learn/')
+		Boolean(data.childMode) ||
+			page.url.pathname.startsWith('/play/') ||
+			page.url.pathname.startsWith('/learn/')
 	);
 	let isStaff = $derived(['teacher', 'admin', 'root_admin'].includes(data.role ?? ''));
 </script>
@@ -21,7 +23,13 @@
 <a class="skip-link" href="#main">{m.skip}</a>
 <div class="container">
 	<header class="site-header">
-		<a class="brand" href={resolve('/')} aria-label={m.home}>
+		<a
+			class="brand"
+			href={data.childMode
+				? resolve('/play/[heroId]', { heroId: data.childMode.heroId })
+				: resolve('/')}
+			aria-label={data.childMode ? m.worldTitle : m.home}
+		>
 			<span class="brand-icon"><Icon name="garden" size={24} /></span><span>
 				<strong>{m.brand}</strong><small>Daugavpils · Latvija</small>
 			</span>
@@ -62,8 +70,8 @@
 					>
 						{m.admin}
 					</a>{/if}
-			</nav>{:else}<a class="game-exit text-link" href={resolve('/family')}>
-				<Icon name="back" size={16} />{m.backFamily}
+			</nav>{:else}<a class="game-exit text-link" href={resolve('/auth/adult?next=/family')}>
+				<Icon name="lock" size={16} />{m.adultArea}
 			</a>{/if}
 		<div class="header-actions">
 			<form action="/locale" method="POST" class="locale-switch" aria-label={m.language}>
@@ -85,7 +93,10 @@
 					<button class="btn secondary small" aria-label={m.signOut}>
 						<Icon name="logout" size={17} /><span class="auth-link">{m.signOut}</span>
 					</button>
-				</form>{:else}<a class="btn small auth-link" href={resolve('/auth/login')}>
+				</form>{:else if !data.childMode}<a
+					class="btn small auth-link"
+					href={resolve('/auth/login')}
+				>
 					{m.signIn}<Icon name="arrow" size={16} />
 				</a>{/if}
 			{#if !isGame}<button

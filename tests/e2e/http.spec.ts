@@ -50,6 +50,7 @@ test('HTTP: verified server session carries a family through hero creation and l
 	let state = await (await request.get(`${fixture}/__test/state`)).json();
 	const hero = state.children[0];
 	expect(hero.nickname).toBe('Comet');
+	expect((await submit(request, `/play/${hero.id}/enter`, {})).status()).toBe(303);
 	const world = await request.get(`/play/${hero.id}`);
 	expect(world.status()).toBe(200);
 	const worldHtml = await world.text();
@@ -57,12 +58,17 @@ test('HTTP: verified server session carries a family through hero creation and l
 	expect(worldHtml).toContain('/learn/40000000-0000-4000-8000-000000000001');
 	const lessonPath = '/learn/40000000-0000-4000-8000-000000000001';
 	expect((await request.get(lessonPath)).status()).toBe(200);
-	const completed = await submit(request, `${lessonPath}?/complete`, { hero_id: hero.id });
+	const completed = await submit(request, `${lessonPath}?/complete`, {
+		hero_id: hero.id,
+		content_version: '1'
+	});
 	expect(completed.status()).toBe(200);
 	expect(await completed.text()).toContain('This discovery is saved for your hero.');
-	expect((await submit(request, `${lessonPath}?/complete`, { hero_id: hero.id })).status()).toBe(
-		200
-	);
+	expect(
+		(
+			await submit(request, `${lessonPath}?/complete`, { hero_id: hero.id, content_version: '1' })
+		).status()
+	).toBe(200);
 	state = await (await request.get(`${fixture}/__test/state`)).json();
 	expect(state.progress).toHaveLength(1);
 	expect(state.progress[0].child_profile_id).toBe(hero.id);
@@ -85,8 +91,8 @@ test('HTTP: teacher material is created as draft, edited and published through r
 		location: 'workshop'
 	};
 	const created = await submit(request, '/studio?/create', data);
-	expect(created.status()).toBe(200);
-	expect(await created.text()).toContain('Shapes around us');
+	expect(created.status()).toBe(303);
+	expect(created.headers().location).toMatch(/^\/studio\/[0-9a-f-]+$/);
 	let state = await (await request.get(`${fixture}/__test/state`)).json();
 	const draft = state.lessons.find((item: { title: string }) => item.title === data.title);
 	expect(draft.author_id).toBe(teacherId);
@@ -96,10 +102,19 @@ test('HTTP: teacher material is created as draft, edited and published through r
 	const updated = await submit(request, `/studio/${draft.id}`, {
 		...data,
 		title: 'Shapes: look and compare',
-		status: 'published'
+		status: 'published',
+		updated_at: draft.updated_at
 	});
 	expect(updated.status()).toBe(200);
 	expect(await updated.text()).toContain('Shapes: look and compare');
+	const conflict = await submit(request, `/studio/${draft.id}`, {
+		...data,
+		title: 'Unsaved older tab',
+		status: 'published',
+		updated_at: draft.updated_at
+	});
+	expect(conflict.status()).toBe(409);
+	expect(await conflict.text()).toContain('Unsaved older tab');
 	state = await (await request.get(`${fixture}/__test/state`)).json();
 	expect(state.lessons.find((item: { id: string }) => item.id === draft.id).status).toBe(
 		'published'
@@ -209,4 +224,224 @@ test('HTTP: credential failures, redirect validation and logout preserve session
 	expect(loggedOut.status()).toBe(303);
 	expect(loggedOut.headers().location).toBe('/');
 	expect((await request.get('/family', { maxRedirects: 0 })).status()).toBe(303);
+});
+
+test('HTTP: interactive activities resume, reject stale submissions and award XP once', async ({
+	request
+}) => {
+	await login(request, 'teacher');
+	const readingId = '60000000-0000-4000-8000-000000000011';
+	const choiceId = '60000000-0000-4000-8000-000000000012';
+	const reflectionId = '60000000-0000-4000-8000-000000000013';
+	const right = '60000000-0000-4000-8000-000000000014';
+	const wrong = '60000000-0000-4000-8000-000000000015';
+	const blocks = [
+		{
+			id: readingId,
+			type: 'reading',
+			title: 'Look carefully',
+			body: 'Read the short instruction with an adult.'
+		},
+		{
+			id: choiceId,
+			type: 'choice',
+			prompt: 'Choose the triangle.',
+			options: [
+				{ id: right, label: 'Triangle' },
+				{ id: wrong, label: 'Circle' }
+			],
+			correct_option_id: right
+		},
+		{ id: reflectionId, type: 'reflection', prompt: 'Find a similar shape in your room.' }
+	];
+	const metadata = {
+		title: 'Interactive discovery',
+		description: '',
+		body: '',
+		locale: 'en',
+		age_band: '7-9',
+		location: 'school',
+		blocks: JSON.stringify(blocks)
+	};
+	expect((await submit(request, '/studio?/create', metadata)).status()).toBe(303);
+	let state = await (await request.get(`${fixture}/__test/state`)).json();
+	const lesson = state.lessons.find((item: { title: string }) => item.title === metadata.title);
+	expect(
+		(
+			await submit(request, `/studio/${lesson.id}`, {
+				...metadata,
+				status: 'published',
+				updated_at: lesson.updated_at
+			})
+		).status()
+	).toBe(200);
+	expect((await submit(request, '/auth/logout', {})).status()).toBe(303);
+	await login(request, 'parent');
+	expect(
+		(
+			await submit(request, '/family?/createHero', {
+				nickname: 'Nova',
+				age_band: '7-9',
+				avatar: 'crystal',
+				locale: 'en'
+			})
+		).status()
+	).toBe(200);
+	state = await (await request.get(`${fixture}/__test/state`)).json();
+	const hero = state.children[0];
+	expect((await submit(request, `/play/${hero.id}/enter`, {})).status()).toBe(303);
+	const lessonPath = `/learn/${lesson.id}`;
+	const childPage = await request.get(lessonPath);
+	expect(childPage.status()).toBe(200);
+	expect(await childPage.text()).not.toContain('correct_option_id');
+	const base = { hero_id: hero.id, content_version: '1' };
+	expect((await submit(request, `${lessonPath}?/complete`, base)).status()).toBe(400);
+	expect(
+		(
+			await submit(request, `${lessonPath}?/step`, {
+				...base,
+				block_id: choiceId,
+				option_id: right
+			})
+		).status()
+	).toBe(400);
+	expect(
+		(await submit(request, `${lessonPath}?/step`, { ...base, block_id: readingId })).status()
+	).toBe(200);
+	const wrongAnswer = await submit(request, `${lessonPath}?/step`, {
+		...base,
+		block_id: choiceId,
+		option_id: wrong
+	});
+	expect(wrongAnswer.status()).toBe(200);
+	state = await (await request.get(`${fixture}/__test/state`)).json();
+	expect(state.blockProgress).toHaveLength(1);
+	expect(state.progress[0].last_step).toBe(1);
+	expect((await request.get(lessonPath)).status()).toBe(200);
+	expect(
+		(
+			await submit(request, `${lessonPath}?/step`, {
+				...base,
+				content_version: '2',
+				block_id: choiceId,
+				option_id: right
+			})
+		).status()
+	).toBe(400);
+	expect(
+		(
+			await submit(request, `${lessonPath}?/step`, {
+				...base,
+				block_id: choiceId,
+				option_id: right
+			})
+		).status()
+	).toBe(200);
+	expect(
+		(await submit(request, `${lessonPath}?/step`, { ...base, block_id: reflectionId })).status()
+	).toBe(200);
+	expect((await submit(request, `${lessonPath}?/complete`, base)).status()).toBe(200);
+	expect((await submit(request, `${lessonPath}?/complete`, base)).status()).toBe(200);
+	state = await (await request.get(`${fixture}/__test/state`)).json();
+	expect(state.rewards).toHaveLength(1);
+	expect(state.rewards[0].xp).toBe(25);
+	expect(state.blockProgress).toHaveLength(3);
+	expect(state.progress[0].status).toBe('completed');
+});
+
+test('HTTP: root child mode blocks adult reads and mutations until password reauthentication', async ({
+	request
+}) => {
+	await login(request, 'root_admin');
+	expect(
+		(
+			await submit(request, '/family?/createHero', {
+				nickname: 'Orbit',
+				age_band: '7-9',
+				avatar: 'compass',
+				locale: 'en'
+			})
+		).status()
+	).toBe(200);
+	const state = await (await request.get(`${fixture}/__test/state`)).json();
+	const hero = state.children[0];
+	expect((await submit(request, `/play/${hero.id}/enter`, {})).status()).toBe(303);
+	const world = await request.get(`/play/${hero.id}`);
+	expect(world.status()).toBe(200);
+	expect(await world.text()).not.toContain('root_admin@example.test');
+	for (const path of [
+		'/family?unlocked=1',
+		'/admin/ai',
+		'/admin/users',
+		'/studio',
+		'/auth/reset'
+	]) {
+		const blocked = await request.get(path, { maxRedirects: 0 });
+		expect(blocked.status()).toBe(303);
+		expect(blocked.headers().location).toContain('/auth/adult');
+	}
+	expect((await submit(request, '/family?/removeHero', { hero_id: hero.id })).status()).toBe(403);
+	expect(
+		(
+			await submit(request, '/admin/users?/setRole', { user_id: teacherId, role: 'root_admin' })
+		).status()
+	).toBe(403);
+	const wrongPassword = await submit(request, '/auth/adult', {
+		password: 'WrongPassword123!',
+		next: '/admin'
+	});
+	expect(wrongPassword.status()).toBe(401);
+	expect((await request.get('/admin', { maxRedirects: 0 })).headers().location).toContain(
+		'/auth/adult'
+	);
+	const unlocked = await submit(request, '/auth/adult', { password, next: '/admin' });
+	expect(unlocked.status()).toBe(303);
+	expect(unlocked.headers().location).toBe('/admin');
+	expect((await request.get('/admin')).status()).toBe(200);
+	expect(
+		(
+			await submit(request, '/family?/updateHero', {
+				hero_id: hero.id,
+				nickname: 'Orbit Two',
+				age_band: '10-12',
+				avatar: 'crystal',
+				locale: 'lv'
+			})
+		).status()
+	).toBe(200);
+	const updated = await (await request.get(`${fixture}/__test/state`)).json();
+	expect(updated.children[0]).toMatchObject({
+		nickname: 'Orbit Two',
+		age_band: '10-12',
+		locale: 'lv'
+	});
+});
+
+test('HTTP: native lesson actions preserve the adult-selected hero', async ({ request }) => {
+	await login(request, 'parent');
+	for (const nickname of ['First explorer', 'Second explorer']) {
+		expect(
+			(
+				await submit(request, '/family?/createHero', {
+					nickname,
+					age_band: '7-9',
+					avatar: 'leaf',
+					locale: 'en'
+				})
+			).status()
+		).toBe(200);
+	}
+	let state = await (await request.get(`${fixture}/__test/state`)).json();
+	const heroId = state.children[1].id;
+	const lessonPath = '/learn/40000000-0000-4000-8000-000000000001';
+	const response = await submit(request, `${lessonPath}?/complete&hero=${heroId}`, {
+		hero_id: heroId,
+		content_version: '1'
+	});
+	expect(response.status()).toBe(200);
+	expect(await response.text()).toMatch(new RegExp(`name="hero_id"[^>]*value="${heroId}"`));
+	state = await (await request.get(`${fixture}/__test/state`)).json();
+	expect(state.progress).toHaveLength(1);
+	expect(state.progress[0].child_profile_id).toBe(heroId);
+	expect(state.rewards[0].child_profile_id).toBe(heroId);
 });

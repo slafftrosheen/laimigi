@@ -1,3 +1,5 @@
+import { learningEn, learningLv, learningRu } from './learning';
+
 export const locales = ['lv', 'ru', 'en'] as const;
 export type Locale = (typeof locales)[number];
 export const localeNames: Record<Locale, string> = { lv: 'Latviešu', ru: 'Русский', en: 'English' };
@@ -6,6 +8,7 @@ export function isLocale(value: unknown): value is Locale {
 }
 
 const en = {
+	...learningEn,
 	brand: 'Laimīgie bērni',
 	navigation: 'Main navigation',
 	menu: 'Open navigation',
@@ -280,6 +283,7 @@ const en = {
 export type MessageKey = keyof typeof en;
 export type Messages = { [K in MessageKey]: string };
 const lv: Messages = {
+	...learningLv,
 	brand: 'Laimīgie bērni',
 	navigation: 'Galvenā navigācija',
 	menu: 'Atvērt izvēlni',
@@ -558,6 +562,7 @@ const lv: Messages = {
 	status: 'Statuss'
 };
 const ru: Messages = {
+	...learningRu,
 	brand: 'Laimīgie bērni',
 	navigation: 'Основная навигация',
 	menu: 'Открыть меню',
@@ -838,6 +843,22 @@ export function getMessages(locale: unknown): Messages {
 	return dictionaries[isLocale(locale) ? locale : 'lv'];
 }
 const codes: Record<string, MessageKey> = {
+	hero_updated: 'heroUpdated',
+	lesson_duplicated: 'lessonDuplicated',
+	step_saved: 'stepSaved',
+	answer_incorrect: 'incorrectAnswer',
+	lesson_changed: 'lessonRevised',
+	lesson_conflict: 'lessonConflict',
+	steps_required: 'completeStepsHint',
+	invalid_blocks: 'blocksInvalid',
+	adult_password_required: 'adultPasswordRequired',
+	adult_password_invalid: 'adultPasswordInvalid',
+	adult_reauth_rate_limited: 'adultReauthRateLimited',
+	adult_reauth_unavailable: 'adultReauthUnavailable',
+	adult_account_unavailable: 'adultAccountUnavailable',
+	child_mode_unavailable: 'childModeUnavailable',
+	child_mode_forbidden: 'adultModeRequired',
+	adult_mode_required: 'adultModeRequired',
 	not_found: 'notFound',
 	request_too_large: 'invalidInput',
 	invalid_signup: 'errorInvalidSignup',
@@ -902,6 +923,9 @@ export function messageFor(code: unknown, locale: unknown): string {
 	return typeof code === 'string'
 		? m[codes[code] ?? (code in m ? (code as MessageKey) : 'genericError')]
 		: m.genericError;
+}
+export function formatMessage(template: string, values: Record<string, string | number>): string {
+	return template.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
 }
 export const locationKeys = [
 	'school',

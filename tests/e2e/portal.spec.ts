@@ -42,7 +42,7 @@ test('family creates a hero, enters the world, completes a published lesson and 
 	await page.locator('input[name="avatar"][value="compass"]').check();
 	await page.getByRole('button', { name: 'Create a hero', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'Comet', exact: true })).toBeVisible();
-	await page.getByRole('link', { name: 'Enter the world' }).click();
+	await page.getByRole('button', { name: 'Enter the world' }).click();
 	await expect(page).toHaveURL(/\/play\/[a-f0-9-]+$/);
 	await capture(page, 'world-desktop');
 	await page.setViewportSize({ width: 390, height: 844 });
@@ -51,8 +51,8 @@ test('family creates a hero, enters the world, completes a published lesson and 
 	await expect(
 		page.getByRole('heading', { name: 'An observatory discovery', exact: true })
 	).toBeVisible();
-	await expect(page.getByLabel('Who is learning?')).toHaveValue(/^[a-f0-9-]+$/);
-	await page.getByRole('button', { name: 'Mark as completed', exact: true }).click();
+	await expect(page.locator('input[name="hero_id"]')).toHaveValue(/^[a-f0-9-]+$/);
+	await page.getByRole('button', { name: 'Complete this discovery', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'Completed', exact: true })).toBeDisabled();
 	await page.reload();
 	await expect(page.getByRole('button', { name: 'Completed', exact: true })).toBeDisabled();
@@ -75,21 +75,18 @@ test('teacher creates a draft, edits it and publishes the reviewed material', as
 		.getByLabel('Short description', { exact: true })
 		.fill('An observation activity for the workshop.');
 	await page
-		.getByLabel('Learning material', { exact: false })
+		.getByLabel('Lesson overview', { exact: false })
 		.fill('Find three shapes around the room. Compare them with a grown-up.');
 	await page.getByLabel('Content language').selectOption('en');
 	await page.getByLabel('Age league').selectOption('7-9');
 	await page.getByLabel('Learning place').selectOption('workshop');
 	await page.getByRole('button', { name: 'Create draft', exact: true }).click();
-	const card = page
-		.locator('article')
-		.filter({ has: page.getByRole('heading', { name: 'Shapes around us', exact: true }) });
-	await expect(card.getByText('Draft', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(/\/studio\/[a-f0-9-]+$/);
+	await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Shapes around us');
 	let state = await (await request.get(`${fixture}/__test/state`)).json();
 	expect(
 		state.lessons.find((item: { title: string }) => item.title === 'Shapes around us').status
 	).toBe('draft');
-	await page.getByRole('link', { name: 'Shapes around us', exact: true }).click();
 	await page.getByLabel('Title', { exact: true }).fill('Shapes: look and compare');
 	await page.getByLabel('Status').selectOption('published');
 	await page.getByRole('button', { name: 'Save changes', exact: true }).click();

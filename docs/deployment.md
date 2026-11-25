@@ -4,16 +4,19 @@ This is the deployment path for the foundation. There is no hosted project ID, p
 
 ## 1. Connect the online Supabase development project
 
-Create or select the intended project in your Supabase account. Apply `supabase/migrations/202611240001_foundation.sql` through the SQL editor, or use the CLI procedure in [database.md](database.md). Review the project reference before running a migration. Applying local CLI configuration does not configure a hosted project's Auth settings.
+Create or select the intended project in your Supabase account. Apply all files in `supabase/migrations/` in filename order through the SQL editor, or use the CLI procedure in [database.md](database.md). New projects need the foundation, learning journey and child-mode migrations. Existing foundation projects need only the two new `20261125` migrations; do not reapply the foundation. The application fails closed if the child-session migration is missing. Review the project reference before running a migration. Applying local CLI configuration does not configure a hosted project's Auth settings.
 
 In the online project's Auth settings:
 
 - Keep email confirmation enabled.
 - Set minimum password length to 12 or greater.
 - Disable anonymous sign-ins.
+- Enable **Require current password when changing password**, and keep confirmation of email changes on both old and new addresses enabled. This is a hosted Auth prerequisite for child mode: SQL policies do not govern Auth account updates. The repository sets `auth.email.require_current_password = true` locally, but you must enable it separately for the online project.
 - Set the Site URL to the Vercel deployment URL once it exists.
 - Allow the local callbacks you use, such as `http://localhost:5173/auth/callback` and `http://localhost:5173/auth/callback?next=/auth/reset`.
 - Allow the equivalent HTTPS paths for the chosen Vercel URL. Use exact deployment domains; do not allow arbitrary unrelated Vercel projects.
+
+The current-password requirement exempts verified password recovery flows. The separate secure-password-change setting alone does not cover freshly signed-in sessions. These behaviors are documented in [Supabase's Auth configuration](https://supabase.com/docs/guides/local-development/cli/config#auth.email.require_current_password) and [password security guide](https://supabase.com/docs/guides/auth/password-security). Verify both password recovery and attempted direct password changes with the actual development project's settings.
 
 The app supports two confirmation paths:
 
@@ -87,6 +90,6 @@ Daily caps count requests, not euros. Use the provider account's own spending co
 
 ## 6. Verify hosted behavior
 
-After connecting real services, check one verified parent and one staff account end to end: family creation, hero ownership, lesson publication and completion, password recovery, logout, root-only settings, one provider test, and one draft generation. Confirm the intended development project receives writes and that a separate parent cannot read another family's rows.
+After connecting real services, check one verified parent and one staff account end to end: family creation, hero ownership and editing, an interactive lesson, wrong-answer retry, saved progress, revision changes, one-time XP, child-mode restrictions and adult password reauthentication, password recovery, logout, root-only settings, one provider test, and one draft generation. Confirm the intended development project receives writes and that a separate parent cannot read another family's rows.
 
 The repository's offline verification covers the build, real SQL policy behavior in PGlite, provider request contracts and local browser integration. Hosted Auth, PostgREST, email delivery, Vercel runtime secrets and actual AI account/model access need this final live check.

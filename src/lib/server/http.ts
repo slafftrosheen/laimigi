@@ -2,13 +2,12 @@ import { error, type RequestEvent } from '@sveltejs/kit';
 
 /** SvelteKit protects form actions; JSON mutation routes also require a matching Origin. */
 export function assertSameOrigin(event: RequestEvent): void {
-	if (event.request.headers.get('origin') !== event.url.origin)
-		error(403, { message: 'forbidden' });
+	if (event.request.headers.get('origin') !== event.url.origin) error(403, 'forbidden');
 }
 
 export async function readBoundedForm(request: Request, maxBytes = 64_000): Promise<FormData> {
 	const size = Number(request.headers.get('content-length') ?? '0');
-	if (size > maxBytes) error(413, { message: 'request_too_large' });
+	if (size > maxBytes) error(413, 'request_too_large');
 	const reader = request.body?.getReader();
 	if (!reader) return new FormData();
 	const chunks: Uint8Array[] = [];
@@ -20,7 +19,7 @@ export async function readBoundedForm(request: Request, maxBytes = 64_000): Prom
 			total += value.byteLength;
 			if (total > maxBytes) {
 				await reader.cancel();
-				error(413, { message: 'request_too_large' });
+				error(413, 'request_too_large');
 			}
 			chunks.push(value);
 		}
@@ -32,7 +31,7 @@ export async function readBoundedForm(request: Request, maxBytes = 64_000): Prom
 		!contentType.startsWith('application/x-www-form-urlencoded') &&
 		!contentType.startsWith('multipart/form-data')
 	) {
-		error(415, { message: 'invalid_input' });
+		error(415, 'invalid_input');
 	}
 	return new Response(Buffer.concat(chunks), {
 		headers: { 'content-type': contentType }

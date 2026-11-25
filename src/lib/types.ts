@@ -15,6 +15,14 @@ export const LOCATIONS = [
 ] as const;
 export type WorldLocation = (typeof LOCATIONS)[number];
 
+export type LessonBlock =
+	| { id: string; type: 'reading'; title: string; body: string }
+	| { id: string; type: 'choice'; prompt: string; options: { id: string; label: string }[] }
+	| { id: string; type: 'reflection'; prompt: string };
+export type AuthorLessonBlock =
+	| Exclude<LessonBlock, { type: 'choice' }>
+	| (Extract<LessonBlock, { type: 'choice' }> & { correct_option_id: string });
+
 export interface Family {
 	id: string;
 	owner_id: string;
@@ -34,6 +42,8 @@ export interface Lesson {
 	title: string;
 	description: string;
 	body: string;
+	blocks: LessonBlock[];
+	content_version: number;
 	locale: Locale;
 	age_band: AgeBand;
 	location: WorldLocation;
@@ -46,4 +56,27 @@ export interface LessonProgress {
 	lesson_id: string;
 	status: string;
 	completed_at: string | null;
+	last_step: number;
+	content_version: number;
+	updated_at: string;
+}
+export interface BlockProgress {
+	child_profile_id: string;
+	lesson_id: string;
+	block_id: string;
+	content_version: number;
+	completed_at: string;
+}
+export interface HeroReward {
+	child_profile_id: string;
+	lesson_id: string;
+	location: WorldLocation;
+	xp: number;
+	earned_at: string;
+}
+export interface StepResult {
+	correct: boolean;
+	completed: boolean;
+	completed_count: number;
+	total_blocks: number;
 }

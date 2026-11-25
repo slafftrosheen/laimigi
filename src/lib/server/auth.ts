@@ -2,7 +2,7 @@ import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 import type { AppRole } from '#lib/types';
 
 export function requireUser(event: RequestEvent) {
-	if (!event.locals.supabase) error(503, { message: 'not_configured' });
+	if (!event.locals.supabase) error(503, 'not_configured');
 	if (!event.locals.user) {
 		const next = encodeURIComponent(event.url.pathname + event.url.search);
 		redirect(303, `/auth/login?next=${next}`);
@@ -11,7 +11,7 @@ export function requireUser(event: RequestEvent) {
 }
 export function requireRole(event: RequestEvent, roles: readonly AppRole[]) {
 	const context = requireUser(event);
-	if (!context.role || !roles.includes(context.role)) error(403, { message: 'forbidden' });
+	if (!context.role || !roles.includes(context.role)) error(403, 'forbidden');
 	return { ...context, role: context.role };
 }
 export function requireRoot(event: RequestEvent) {

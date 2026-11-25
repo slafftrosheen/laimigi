@@ -21,13 +21,21 @@ Request admission is transactional in PostgreSQL. Quotas count reserved and fail
 
 ## Known foundation boundaries
 
-This is a development foundation, not a production safeguarding certification. Child mode currently shares the adult login session: its navigation and appearance do not constitute a PIN or separate child authorization boundary. Avoid handing an administrative session to a child; a proper adult reauthentication flow is planned.
+This is a development foundation, not a production safeguarding certification. Entering a hero installs a server-owned lock for that signed Supabase Auth session. The request hook and database policies restrict it to the active hero and eligible learning material. Clearing a UI preference or refreshing the token does not remove the lock. Returning to adult pages requires the current adult account password and a newly verified Auth session. Failed attempts are limited to five per session in 15 minutes. All tabs using the same session share the lock.
+
+This protects application navigation and PostgREST access; it is not a sandbox against an extracted bearer token, developer tools or a compromised device. Supabase Auth endpoints have their own security controls outside PostgreSQL RLS. Enable the hosted **Require current password when changing password** setting and confirmation of email changes at both addresses; the local config enables the password requirement, but SQL migrations cannot configure the hosted Auth service. The secure-password-change setting alone exempts fresh sessions. An actor who obtains an adult bearer token may still reach other account-management endpoints depending on hosted Auth settings. Before production, verify those settings, root MFA and the intended device threat model. Already rendered adult pages are not remotely erased when a session enters child mode.
 
 Root can list adult accounts and assign roles; it does not get unrestricted family-record access through browser database queries. The narrowly used service credential still bypasses RLS by design and must stay on the server. Database/project owners remain privileged operators.
 
 The UI includes no open chat, public child profiles, payments, recording or live video. Camera and microphone permissions are disabled until a supported classroom flow is added.
 
 Application errors sent to clients are sanitized. Audits and AI usage intentionally omit credentials, ciphertext, prompts and responses. A full operational retention/monitoring policy and root MFA are follow-up work before production use.
+
+## Learning integrity
+
+Teacher answer keys stay in a private table and are returned only through the authorized editor RPC. Learner submissions carry the content revision, and database transactions enforce the active hero, publication, age/language match and step order. Revision changes invalidate saved step confirmations for the new version. Reading and reflection are self-confirmed activities; the system does not claim to prove comprehension.
+
+XP comes only from the completion RPC and an immutable per-hero/per-lesson reward ledger. Replays, retries and revised-content completion do not award again. Deleting a lesson retains the existing reward; deleting a hero removes that hero’s learning data. Achievements describe personal milestones, with no public ranking or attendance streak pressure.
 
 ## Changes and validation
 

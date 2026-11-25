@@ -1,6 +1,6 @@
 {
 	"name": "laimigi",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"private": true,
 	"type": "module",
 	"imports": {
@@ -20,8 +20,11 @@
 		"test": "vitest run",
 		"test:db": "node scripts/db-test.mjs",
 		"test:e2e": "playwright test",
-		"verify": "npm run check && npm run lint && npm test && npm run test:db && npm run build",
-		"admin:bootstrap": "node --env-file=.env.local scripts/bootstrap-root-admin.mjs"
+		"verify": "npm run check && npm run lint && npm test && npm run test:db && npm run test:learning && npm run test:child-mode && npm run build",
+		"admin:bootstrap": "node --env-file=.env.local scripts/bootstrap-root-admin.mjs",
+		"test:learning": "node scripts/learning-test.mjs",
+		"test:child-mode": "node scripts/child-mode-test.mjs",
+		"test:http": "playwright test tests/e2e/http.spec.ts"
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "^0.6.0",
@@ -49,7 +52,7 @@
 		"@supabase/supabase-js": "^2.119.2",
 		"zod": "^4.6.7"
 	},
-	"description": "Laim\u012bgie b\u0113rni \u2014 multilingual family learning portal",
+	"description": "Laimīgie bērni — multilingual family learning portal",
 	"engines": {
 		"node": ">=24.0.0 <25"
 	}

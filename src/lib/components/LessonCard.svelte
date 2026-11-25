@@ -13,8 +13,15 @@
 		lesson,
 		locale,
 		heroId,
-		completed = false
-	}: { lesson: Lesson; locale: Locale; heroId?: string; completed?: boolean } = $props();
+		completed = false,
+		inProgress = false
+	}: {
+		lesson: Lesson;
+		locale: Locale;
+		heroId?: string;
+		completed?: boolean;
+		inProgress?: boolean;
+	} = $props();
 	let m = $derived(getMessages(locale));
 </script>
 
@@ -31,6 +38,8 @@
 				{lesson.age_band}
 			</span>{#if completed}<span class="badge gold">
 					<Icon name="check" size={12} />{m.completed}
+				</span>{:else if inProgress}<span class="badge">
+					<Icon name="clock" size={12} />{m.inProgress}
 				</span>{/if}
 		</div>
 		<h3>{lesson.title}</h3>

@@ -27,6 +27,10 @@ const users = Object.entries(ACCOUNT_IDS).map(([role, id]) => ({
 }));
 let tables;
 let secrets;
+let childLocks;
+let refreshSessions;
+let authoredBlocks;
+let reauthAttempts;
 
 function reset() {
 	tables = {
@@ -50,6 +54,8 @@ function reset() {
 				title: 'An observatory discovery',
 				description: 'A short local test activity.',
 				body: 'Look closely, describe what you notice, and share one question with an adult.',
+				blocks: [],
+				content_version: 1,
 				locale: 'en',
 				age_band: '7-9',
 				location: 'observatory',
@@ -59,6 +65,8 @@ function reset() {
 			}
 		],
 		lesson_progress: [],
+		lesson_block_progress: [],
+		hero_rewards: [],
 		ai_provider_settings: ['openrouter', 'openai'].map((provider) => ({
 			provider,
 			model: '',
@@ -71,10 +79,14 @@ function reset() {
 		}))
 	};
 	secrets = new Map();
+	childLocks = new Map();
+	refreshSessions = new Map();
+	authoredBlocks = new Map();
+	reauthAttempts = new Map();
 }
 reset();
 
-function token(user) {
+function token(user, sessionId) {
 	const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
 	const payload = Buffer.from(
 		JSON.stringify({
@@ -86,7 +98,7 @@ function token(user) {
 			iat: Math.floor(Date.now() / 1000),
 			exp: Math.floor(Date.now() / 1000) + 3600,
 			aal: 'aal1',
-			session_id: '50000000-0000-4000-8000-000000000001',
+			session_id: sessionId,
 			is_anonymous: false
 		})
 	).toString('base64url');
@@ -106,7 +118,8 @@ function actor(request) {
 		return {
 			service: false,
 			user,
-			role: tables.user_roles.find((row) => row.user_id === user.id)?.role
+			role: tables.user_roles.find((row) => row.user_id === user.id)?.role,
+			sessionId: payload.session_id
 		};
 	} catch {
 		return null;
@@ -136,6 +149,22 @@ function failure(response, message, code = '42501', status = 403) {
 
 function visible(name, auth) {
 	if (auth.service) return tables[name];
+	const mode = childLocks.get(auth.sessionId);
+	if (mode) {
+		const hero = tables.child_profiles.find((row) => row.id === mode);
+		if (name === 'child_profiles') return hero ? [hero] : [];
+		if (['lesson_progress', 'lesson_block_progress', 'hero_rewards'].includes(name))
+			return tables[name].filter((row) => row.child_profile_id === mode);
+		if (name === 'lessons')
+			return tables[name].filter(
+				(row) =>
+					hero &&
+					row.status === 'published' &&
+					row.age_band === hero.age_band &&
+					row.locale === hero.locale
+			);
+		return [];
+	}
 	const family = tables.families.find((item) => item.owner_id === auth.user.id);
 	const ownedChildIds = tables.child_profiles
 		.filter((item) => item.family_id === family?.id)
@@ -151,6 +180,8 @@ function visible(name, auth) {
 			return tables[name].filter((item) => item.owner_id === auth.user.id);
 		case 'child_profiles':
 			return tables[name].filter((item) => item.family_id === family?.id);
+		case 'lesson_block_progress':
+		case 'hero_rewards':
 		case 'lesson_progress':
 			return tables[name].filter((item) => ownedChildIds.includes(item.child_profile_id));
 		case 'ai_provider_settings':
@@ -187,6 +218,8 @@ function filtered(items, search) {
 			(a, b) => String(a[key]).localeCompare(String(b[key])) * (direction === 'desc' ? -1 : 1)
 		);
 	}
+	const offset = Number(search.get('offset'));
+	if (offset > 0) selected = selected.slice(offset);
 	const limit = Number(search.get('limit'));
 	if (limit > 0) selected = selected.slice(0, limit);
 	return selected;
@@ -218,6 +251,93 @@ function representation(request, response, rows, search, status = 200) {
 }
 
 async function rpc(name, input, auth, response) {
+	if (
+		['get_child_mode', 'enter_child_mode', 'reserve_adult_reauth'].includes(name) &&
+		!auth.sessionId
+	)
+		return failure(response, 'Verified session required');
+	if (name === 'get_child_mode')
+		return send(
+			response,
+			200,
+			childLocks.has(auth.sessionId) ? { hero_id: childLocks.get(auth.sessionId) } : null
+		);
+	if (name === 'enter_child_mode') {
+		const hero = visible('child_profiles', auth).find((row) => row.id === input.p_child_profile_id);
+		if (!hero || !auth.sessionId) return failure(response, 'Hero unavailable');
+		if (childLocks.has(auth.sessionId) && childLocks.get(auth.sessionId) !== hero.id)
+			return failure(response, 'Session already locked');
+		childLocks.set(auth.sessionId, hero.id);
+		return send(response, 200, { hero_id: hero.id });
+	}
+	if (name === 'reserve_adult_reauth') {
+		if (!childLocks.has(auth.sessionId)) return failure(response, 'Child mode required');
+		const now = Date.now();
+		const recent = (reauthAttempts.get(auth.sessionId) ?? []).filter(
+			(time) => now - time < 15 * 60000
+		);
+		if (recent.length >= 5) return failure(response, 'adult_reauth_rate_limited', 'P0001', 429);
+		reauthAttempts.set(auth.sessionId, [...recent, now]);
+		return send(response, 200, null);
+	}
+	if (
+		childLocks.has(auth.sessionId) &&
+		!['submit_lesson_block', 'complete_lesson_revision'].includes(name)
+	)
+		return failure(response, 'Adult required');
+	if (
+		['save_lesson', 'get_lesson_blocks_for_editor', 'get_lesson_editor_snapshot'].includes(name)
+	) {
+		if (!['teacher', 'admin', 'root_admin'].includes(auth.role))
+			return failure(response, 'Staff required');
+		let lesson = tables.lessons.find((row) => row.id === input.p_lesson_id);
+		if (
+			input.p_lesson_id &&
+			(!lesson || (auth.role === 'teacher' && lesson.author_id !== auth.user.id))
+		)
+			return failure(response, 'Lesson unavailable');
+		if (name === 'get_lesson_editor_snapshot')
+			return send(response, 200, {
+				lesson: structuredClone(lesson),
+				author_blocks: authoredBlocks.get(lesson.id) ?? []
+			});
+		if (name === 'get_lesson_blocks_for_editor')
+			return send(response, 200, authoredBlocks.get(lesson.id) ?? []);
+		if (
+			lesson &&
+			(!input.p_expected_updated_at || input.p_expected_updated_at !== lesson.updated_at)
+		)
+			return failure(response, 'lesson_conflict', '22023', 400);
+		const { blocks, ...metadata } = input.p_content;
+		if (!lesson) {
+			lesson = {
+				id: randomUUID(),
+				author_id: auth.user.id,
+				content_version: 1,
+				created_at: new Date().toISOString()
+			};
+			tables.lessons.push(lesson);
+		} else if (
+			JSON.stringify([
+				lesson.body,
+				lesson.locale,
+				lesson.age_band,
+				authoredBlocks.get(lesson.id) ?? []
+			]) !== JSON.stringify([metadata.body, metadata.locale, metadata.age_band, blocks])
+		)
+			lesson.content_version++;
+		authoredBlocks.set(lesson.id, structuredClone(blocks));
+		const safeBlocks = blocks.map((block) =>
+			Object.fromEntries(Object.entries(block).filter(([key]) => key !== 'correct_option_id'))
+		);
+		Object.assign(lesson, metadata, {
+			blocks: safeBlocks,
+			updated_at: new Date(
+				Math.max(Date.now(), Date.parse(lesson.updated_at ?? 0) + 1)
+			).toISOString()
+		});
+		return send(response, 200, lesson.id);
+	}
 	if (name === 'configure_ai_provider') {
 		if (auth.role !== 'root_admin') return failure(response, 'Root required');
 		const settings = tables.ai_provider_settings.find((item) => item.provider === input.p_provider);
@@ -241,29 +361,92 @@ async function rpc(name, input, auth, response) {
 		});
 		return send(response, 200, settings);
 	}
-	if (name === 'complete_lesson') {
+	if (['submit_lesson_block', 'complete_lesson_revision'].includes(name)) {
 		const child = visible('child_profiles', auth).find(
 			(item) => item.id === input.p_child_profile_id
 		);
-		const lesson = tables.lessons.find(
+		const lesson = visible('lessons', auth).find(
 			(item) => item.id === input.p_lesson_id && item.status === 'published'
 		);
-		if (!child || !lesson || child.age_band !== lesson.age_band)
+		if (!child || !lesson || child.age_band !== lesson.age_band || child.locale !== lesson.locale)
 			return failure(response, 'Unavailable');
+		if (input.p_content_version !== lesson.content_version)
+			return failure(response, 'lesson_changed', '22023', 400);
 		let progress = tables.lesson_progress.find(
 			(item) => item.child_profile_id === child.id && item.lesson_id === lesson.id
 		);
+		const completedIds = new Set(
+			tables.lesson_block_progress
+				.filter(
+					(item) =>
+						item.child_profile_id === child.id &&
+						item.lesson_id === lesson.id &&
+						item.content_version === lesson.content_version
+				)
+				.map((item) => item.block_id)
+		);
+		if (name === 'submit_lesson_block') {
+			const index = lesson.blocks.findIndex((item) => item.id === input.p_block_id);
+			if (index < 0) return failure(response, 'Unknown block', '22023', 400);
+			if (lesson.blocks.slice(0, index).some((item) => !completedIds.has(item.id)))
+				return failure(response, 'previous_steps_required', '22023', 400);
+			const block = lesson.blocks[index];
+			const answer = authoredBlocks.get(lesson.id)?.find((item) => item.id === block.id);
+			const correct = block.type !== 'choice' || answer?.correct_option_id === input.p_option_id;
+			if (!correct)
+				return send(response, 200, {
+					correct: false,
+					completed: false,
+					completed_count: completedIds.size,
+					total_blocks: lesson.blocks.length
+				});
+			if (!completedIds.has(block.id))
+				tables.lesson_block_progress.push({
+					child_profile_id: child.id,
+					lesson_id: lesson.id,
+					block_id: block.id,
+					content_version: lesson.content_version,
+					completed_at: new Date().toISOString()
+				});
+			completedIds.add(block.id);
+		}
+		if (
+			name === 'complete_lesson_revision' &&
+			lesson.blocks.some((item) => !completedIds.has(item.id))
+		)
+			return failure(response, 'steps_required', '22023', 400);
 		if (!progress) {
-			progress = {
-				child_profile_id: child.id,
-				lesson_id: lesson.id,
-				status: 'completed',
-				completed_at: new Date().toISOString(),
-				last_step: 0,
-				updated_at: new Date().toISOString()
-			};
+			progress = { child_profile_id: child.id, lesson_id: lesson.id };
 			tables.lesson_progress.push(progress);
 		}
+		if (progress.content_version !== lesson.content_version)
+			Object.assign(progress, {
+				content_version: lesson.content_version,
+				status: 'in_progress',
+				completed_at: null
+			});
+		Object.assign(progress, { last_step: completedIds.size, updated_at: new Date().toISOString() });
+		if (name === 'submit_lesson_block')
+			return send(response, 200, {
+				correct: true,
+				completed: true,
+				completed_count: completedIds.size,
+				total_blocks: lesson.blocks.length
+			});
+		progress.status = 'completed';
+		progress.completed_at ??= new Date().toISOString();
+		if (
+			!tables.hero_rewards.some(
+				(item) => item.child_profile_id === child.id && item.lesson_id === lesson.id
+			)
+		)
+			tables.hero_rewards.push({
+				child_profile_id: child.id,
+				lesson_id: lesson.id,
+				location: lesson.location,
+				xp: 25,
+				earned_at: new Date().toISOString()
+			});
 		return send(response, 200, progress);
 	}
 	if (name === 'set_user_role') {
@@ -302,6 +485,8 @@ const server = createServer(async (request, response) => {
 				children: tables.child_profiles,
 				lessons: tables.lessons,
 				progress: tables.lesson_progress,
+				blockProgress: tables.lesson_block_progress,
+				rewards: tables.hero_rewards,
 				providers: tables.ai_provider_settings,
 				encryptedProviders: [...secrets]
 					.filter(([, value]) => value.startsWith('v1.'))
@@ -309,21 +494,25 @@ const server = createServer(async (request, response) => {
 			});
 		if (path === '/auth/v1/token' && request.method === 'POST') {
 			const input = await body(request);
-			const user =
-				url.searchParams.get('grant_type') === 'refresh_token'
-					? users.find((item) => `local-refresh-${item.id}` === input.refresh_token)
-					: users.find((item) => item.email === input.email && input.password === PASSWORD);
+			const refreshing = url.searchParams.get('grant_type') === 'refresh_token';
+			const existing = refreshing ? refreshSessions.get(input.refresh_token) : null;
+			const user = refreshing
+				? users.find((item) => item.id === existing?.userId)
+				: users.find((item) => item.email === input.email && input.password === PASSWORD);
 			if (!user)
 				return send(response, 400, {
 					code: 'invalid_credentials',
 					message: 'Invalid login credentials'
 				});
+			const sessionId = existing?.sessionId ?? randomUUID();
+			const refreshToken = `local-refresh-${randomUUID()}`;
+			refreshSessions.set(refreshToken, { userId: user.id, sessionId });
 			return send(response, 200, {
-				access_token: token(user),
+				access_token: token(user, sessionId),
 				token_type: 'bearer',
 				expires_in: 3600,
 				expires_at: Math.floor(Date.now() / 1000) + 3600,
-				refresh_token: `local-refresh-${user.id}`,
+				refresh_token: refreshToken,
 				user
 			});
 		}
@@ -349,6 +538,7 @@ const server = createServer(async (request, response) => {
 				url.searchParams
 			);
 		}
+		if (childLocks.has(auth.sessionId)) return failure(response, 'Adult required');
 		let changed = [];
 		if (request.method === 'POST' && ['child_profiles', 'lessons'].includes(name)) {
 			const input = await body(request);

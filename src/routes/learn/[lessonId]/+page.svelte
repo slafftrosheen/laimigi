@@ -1,37 +1,36 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
 	import { getMessages, localeNames, locationLabel, leagueLabel } from '#lib/i18n/index';
 	import Icon from '#lib/components/Icon.svelte';
 	import Notice from '#lib/components/Notice.svelte';
 	import Emblem from '#lib/components/Emblem.svelte';
+	import LessonPlayer from '#lib/components/LessonPlayer.svelte';
+	import RewardTrail from '#lib/components/RewardTrail.svelte';
 	import type { PageProps } from './$types';
 	let { data, form }: PageProps = $props();
 	let m = $derived(getMessages(data.locale));
-	let chosen = $state('');
-	let busy = $state(false);
-	let selectedHero = $derived(
-		data.heroes.find((hero) => hero.id === (chosen || page.url.searchParams.get('hero'))) ||
-			data.heroes[0]
-	);
-	let completed = $derived(
-		Boolean(
-			selectedHero &&
-			data.progress.some(
-				(item) => item.child_profile_id === selectedHero.id && item.status === 'completed'
-			)
+	let selectedHero = $derived(data.heroes.find((hero) => hero.id === data.activeHeroId));
+	let progress = $derived(data.progress.find((item) => item.child_profile_id === selectedHero?.id));
+	let rewardEarned = $derived(
+		data.rewards.some(
+			(item) => item.child_profile_id === selectedHero?.id && item.lesson_id === data.lesson.id
 		)
 	);
+	let revised = $derived(
+		Boolean(progress && progress.content_version !== data.lesson.content_version)
+	);
+	let notice = $derived(form && 'stepResult' in form ? null : form);
 </script>
 
 <svelte:head><title>{data.lesson.title} · Laimīgie bērni</title></svelte:head>
 <div class="container lesson-page">
 	<a
 		class="text-link"
-		href={selectedHero ? resolve('/play/[heroId]', { heroId: selectedHero.id }) : resolve('/learn')}
+		href={data.childMode
+			? resolve('/play/[heroId]', { heroId: data.childMode.heroId })
+			: resolve('/learn')}
 	>
-		<Icon name="back" size={17} />{selectedHero ? m.worldTitle : m.backLibrary}
+		<Icon name="back" size={17} />{data.childMode ? m.worldTitle : m.backLibrary}
 	</a>
 	<header class="lesson-banner">
 		<div class="lesson-seal"><Icon name={data.lesson.location} size={40} stroke={1.2} /></div>
@@ -45,62 +44,57 @@
 			</div>
 		</div>
 	</header>
-	<Notice {form} locale={data.locale} />
-	<div class="split-grid content-section">
-		<article class="learning-scroll">
-			<p class="lesson-description">{data.lesson.description}</p>
-			<hr class="divider" />
-			<div class="prose">{data.lesson.body || m.noContent}</div>
-			<div class="scroll-end"><Icon name="leaf" size={25} /></div>
-		</article>
+	{#if data.lesson.description}<p class="lesson-description">{data.lesson.description}</p>{/if}
+	<Notice form={notice} locale={data.locale} />
+	{#if form?.error === 'lesson_changed'}<a
+			class="btn secondary spacer-top"
+			href={selectedHero
+				? resolve(`/learn/[lessonId]?hero=${selectedHero.id}`, { lessonId: data.lesson.id })
+				: resolve('/learn/[lessonId]', { lessonId: data.lesson.id })}
+			data-sveltekit-reload
+		>
+			{m.update}<Icon name="arrow" size={17} />
+		</a>{/if}
+	{#if revised}<div class="notice">
+			<Icon name="info" size={20} /><span>{m.revisionNotice}</span>
+		</div>{/if}
+	<div class="lesson-layout content-section">
+		<div class="lesson-main">
+			{#key `${data.lesson.id}:${data.lesson.content_version}:${selectedHero?.id ?? 'preview'}`}<LessonPlayer
+					lesson={data.lesson}
+					locale={data.locale}
+					heroId={selectedHero?.id}
+					blockProgress={data.blockProgress}
+					{progress}
+					{form}
+					preview={!selectedHero}
+					{rewardEarned}
+				/>{/key}
+		</div>
 		<aside>
-			<div class="panel">
+			<div class="panel learner-panel">
 				<div class="eyebrow"><Icon name="compass" size={15} />{m.yourProgress}</div>
-				<h2>{m.chooseHero}</h2>
-				{#if data.heroes.length}<form
-						method="POST"
-						action="?/complete"
-						use:enhance={() => {
-							busy = true;
-							return async ({ update }) => {
-								await update({ reset: false });
-								busy = false;
-							};
-						}}
-					>
-						<label class="field">
-							<span class="sr-only">{m.chooseHero}</span><select
-								name="hero_id"
-								value={selectedHero?.id}
-								onchange={(event) => (chosen = event.currentTarget.value)}
-							>
-								{#each data.heroes as hero (hero.id)}<option value={hero.id}>
-										{hero.nickname}
-									</option>{/each}
-							</select>
-						</label>{#if selectedHero}<div class="learner">
-								<Emblem avatar={selectedHero.avatar} size={57} />
-								<div>
-									<strong>{selectedHero.nickname}</strong>
-									<p>{leagueLabel(selectedHero.age_band, data.locale)}</p>
-								</div>
-							</div>{/if}{#if completed}<div class="notice success">
-								<Icon name="check" size={20} />
-								<div>
-									<strong>{m.completed}</strong>
-									<p class="small">{m.completedBody}</p>
-								</div>
-							</div>{:else}<p class="small muted" style="margin-bottom:19px">
-								{m.completionHint}
-							</p>{/if}<button class="btn block" disabled={completed || busy}>
-							{completed ? m.completed : busy ? m.saving : m.markComplete}<Icon
-								name="check"
-								size={17}
-							/>
-						</button>
-					</form>{:else}<p class="small muted">{m.createHeroFirst}</p>
+				{#if selectedHero}<div class="learner">
+						<Emblem avatar={selectedHero.avatar} size={60} />
+						<div>
+							<h2>{selectedHero.nickname}</h2>
+							<p>{leagueLabel(selectedHero.age_band, data.locale)}</p>
+						</div>
+					</div>
+					<RewardTrail hero={selectedHero} rewards={data.rewards} locale={data.locale} compact />
+					{#if !data.childMode && data.heroes.length > 1}<form method="GET" class="hero-picker">
+							<label class="field">
+								<span>{m.chooseHero}</span><select name="hero" value={selectedHero.id}>
+									{#each data.heroes as hero (hero.id)}<option value={hero.id}>
+											{hero.nickname}
+										</option>{/each}
+								</select>
+							</label><button class="btn secondary block small">{m.update}</button>
+						</form>{/if}
+				{:else}<h2>{m.chooseHero}</h2>
+					<p class="small muted">{m.selectHeroToSave}</p>
 					<a class="btn block spacer-top" href={resolve('/family')}>
-						{m.newHero}<Icon name="plus" size={17} />
+						{m.family}<Icon name="arrow" size={17} />
 					</a>{/if}
 			</div>
 			<div class="lesson-note">
@@ -119,11 +113,15 @@
 		display: flex;
 		align-items: center;
 		gap: 26px;
-		padding: 35px 0;
+		padding: 35px 0 24px;
+	}
+	.lesson-banner > div:last-child {
+		min-width: 0;
 	}
 	.lesson-banner h1 {
 		font-size: clamp(2.3rem, 4vw, 3.6rem);
 		margin: 11px 0 19px;
+		overflow-wrap: anywhere;
 	}
 	.lesson-banner .eyebrow {
 		font-size: 0.63rem;
@@ -139,72 +137,74 @@
 		border-radius: 40% 40% 15% 15%;
 		flex: none;
 	}
-	.learning-scroll {
-		border: 1px solid #d1c7a2;
-		background: #fffae9;
-		padding: 40px 42px;
-		border-radius: 5px 5px 22px 22px;
-		box-shadow:
-			inset 0 4px 0 #ede0b9,
-			0 10px 30px #5f512409;
-		min-height: 400px;
-	}
 	.lesson-description {
-		font-family: var(--font-display);
-		font-size: 1.4rem;
-		line-height: 1.6;
-		letter-spacing: -0.02em;
-		color: #647152;
+		font-size: 0.91rem;
+		line-height: 1.8;
+		color: var(--muted);
+		max-width: 800px;
+		margin-bottom: 30px;
+		overflow-wrap: anywhere;
 	}
-	.learning-scroll .divider {
-		background: #e2dabb;
-		margin: 25px 0;
+	.lesson-layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 310px;
+		gap: 32px;
+		align-items: start;
+		margin-top: 24px;
 	}
-	.scroll-end {
-		display: flex;
-		justify-content: center;
-		color: #b1b083;
-		border-top: 1px solid #e2dabb;
-		margin-top: 40px;
-		padding-top: 22px;
+	.lesson-main {
+		min-width: 0;
 	}
-	.panel h2 {
-		margin: 13px 0 19px;
+	.learner-panel {
+		padding: 27px;
 	}
 	.learner {
 		display: flex;
-		gap: 16px;
 		align-items: center;
-		margin-bottom: 22px;
+		gap: 17px;
+		margin: 25px 0;
 	}
-	.learner strong {
-		font-family: var(--font-display);
-		font-weight: 400;
-		font-size: 1.4rem;
+	.learner > div {
+		min-width: 0;
+	}
+	.learner h2 {
+		font-size: 1.6rem;
+		overflow-wrap: anywhere;
 	}
 	.learner p {
-		font-size: 0.68rem;
+		font-size: 0.66rem;
 		color: var(--muted);
-		margin-top: 4px;
+		margin-top: 7px;
+	}
+	.learner-panel > h2 {
+		font-size: 1.8rem;
+		margin: 16px 0;
+	}
+	.hero-picker {
+		border-top: 1px solid var(--line);
+		padding-top: 24px;
+		margin-top: 24px;
 	}
 	.lesson-note {
 		display: flex;
 		gap: 12px;
+		align-items: flex-start;
 		margin-top: 23px;
 		color: #7d8c70;
-		align-items: flex-start;
 	}
 	.lesson-note :global(svg) {
 		flex: none;
 	}
 	.lesson-note p {
-		font-size: 0.8rem;
+		font-size: 0.78rem;
 	}
-	.notice strong {
-		font-size: 0.8rem;
-	}
-	.notice p {
-		margin-top: 5px;
+	@media (max-width: 920px) {
+		.lesson-layout {
+			grid-template-columns: 1fr;
+		}
+		.learner-panel {
+			max-width: 600px;
+		}
 	}
 	@media (max-width: 600px) {
 		.lesson-banner {
@@ -221,11 +221,11 @@
 		.lesson-banner h1 {
 			font-size: 2.2rem;
 		}
-		.learning-scroll {
-			padding: 27px 24px;
-		}
 		.lesson-meta .badge {
 			font-size: 0.59rem;
+		}
+		.lesson-layout {
+			gap: 24px;
 		}
 	}
 </style>
